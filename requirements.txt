@@ -1,7 +1,4 @@
 flask
-requests
-akshare>=1.0.90
-textblob
-pandas
 aiohttp
-Jinja2
+akshare>=1.10.0
+pandas
