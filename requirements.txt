@@ -1,7 +1,5 @@
+flask
 requests
-beautifulsoup4
+akshare
 textblob
 pandas
-ta
-akshare
-aiohttp
