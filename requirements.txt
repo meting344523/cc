@@ -1,0 +1,7 @@
+requests
+beautifulsoup4
+textblob
+pandas
+ta
+akshare
+aiohttp
