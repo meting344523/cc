@@ -22,45 +22,47 @@ HEADERS = {
 }
 
 # -------------------------------
-# 虚拟货币抓取 - Binance公开API（不变）
+# 虚拟货币抓取 - CoinGecko免费API替代Binance
 # -------------------------------
 
-CRYPTO_SYMBOLS = [
-    "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT",
-    "SOLUSDT", "DOGEUSDT", "DOTUSDT", "MATICUSDT", "LTCUSDT"
-]
-
 async def fetch_crypto_data():
-    url = "https://api.binance.com/api/v3/ticker/price"
+    url = "https://api.coingecko.com/api/v3/simple/price"
+    ids = "bitcoin,ethereum,binancecoin,ripple,cardano,solana,dogecoin,polkadot,polygon,litecoin"
+    vs_currencies = "usd"
     result = []
+    name_map = {
+        "bitcoin": "Bitcoin",
+        "ethereum": "Ethereum",
+        "binancecoin": "Binance Coin",
+        "ripple": "XRP",
+        "cardano": "Cardano",
+        "solana": "Solana",
+        "dogecoin": "Dogecoin",
+        "polkadot": "Polkadot",
+        "polygon": "Polygon",
+        "litecoin": "Litecoin"
+    }
     try:
         async with aiohttp.ClientSession(headers=HEADERS) as session:
-            for symbol in CRYPTO_SYMBOLS:
-                params = {"symbol": symbol}
-                async with session.get(url, params=params) as resp:
-                    if resp.status != 200:
-                        print(f"Binance请求失败: {resp.status} {symbol}")
+            params = {
+                "ids": ids,
+                "vs_currencies": vs_currencies
+            }
+            async with session.get(url, params=params) as resp:
+                if resp.status != 200:
+                    print(f"CoinGecko请求失败: {resp.status}")
+                    cache["crypto"] = []
+                    return
+                data = await resp.json()
+                for key, name in name_map.items():
+                    price_usd = data.get(key, {}).get("usd", 0)
+                    if price_usd <= 0:
                         continue
-                    data = await resp.json()
-                    price_usdt = float(data.get("price", 0))
-                    price_cny = round(price_usdt * 7, 2)  # 固定汇率7，生产环境可替换为实时汇率
+                    price_cny = round(price_usd * 7, 2)  # 固定汇率7
                     buy = round(price_cny * 0.95, 2)
                     sell = round(price_cny * 1.1, 2)
                     score = round(random.uniform(6, 9), 2)
-                    name_map = {
-                        "BTCUSDT": "Bitcoin",
-                        "ETHUSDT": "Ethereum",
-                        "BNBUSDT": "Binance Coin",
-                        "XRPUSDT": "XRP",
-                        "ADAUSDT": "Cardano",
-                        "SOLUSDT": "Solana",
-                        "DOGEUSDT": "Dogecoin",
-                        "DOTUSDT": "Polkadot",
-                        "MATICUSDT": "Polygon",
-                        "LTCUSDT": "Litecoin"
-                    }
-                    name = name_map.get(symbol, symbol)
-                    reason = "Binance交易所实时价格"
+                    reason = "CoinGecko实时价格"
                     result.append({
                         "名称": name,
                         "当前价格": price_cny,
@@ -69,11 +71,10 @@ async def fetch_crypto_data():
                         "理由": reason,
                         "评分": score
                     })
-        cache["crypto"] = result
-        cache["crypto"].sort(key=lambda x: x["评分"], reverse=True)  # 按评分降序排序
-        print(f"Binance虚拟货币抓取成功，数量：{len(result)}")
+        cache["crypto"] = sorted(result, key=lambda x: x["评分"], reverse=True)
+        print(f"CoinGecko虚拟货币抓取成功，数量：{len(result)}")
     except Exception as e:
-        print("Binance虚拟货币抓取失败:", e)
+        print("CoinGecko虚拟货币抓取失败:", e)
         traceback.print_exc()
 
 # -------------------------------
@@ -125,8 +126,7 @@ def fetch_stock_data():
             }]
             print("当前非交易时间，A股无有效行情更新")
         else:
-            cache["stocks"] = result
-            cache["stocks"].sort(key=lambda x: x["评分"], reverse=True)  # 按评分降序排序
+            cache["stocks"] = sorted(result, key=lambda x: x["评分"], reverse=True)
             print(f"新浪财经A股抓取成功，数量：{len(result)}")
     except Exception as e:
         print("新浪财经A股抓取失败：", e)
@@ -191,8 +191,7 @@ def fetch_fund_data():
             }]
             print("当前非交易时间，基金无有效净值更新")
         else:
-            cache["funds"] = result
-            cache["funds"].sort(key=lambda x: x["评分"], reverse=True)  # 按评分降序排序
+            cache["funds"] = sorted(result, key=lambda x: x["评分"], reverse=True)
             print(f"天天基金基金抓取成功，数量：{len(result)}")
     except Exception as e:
         print("天天基金基金抓取失败：", e)
