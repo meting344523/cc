@@ -5,6 +5,7 @@ import os
 import time
 import akshare as ak
 import aiohttp
+import random
 
 PORT = int(os.environ.get('PORT', 8000))
 
@@ -20,7 +21,15 @@ def run_server():
     print(f"Serving HTTP on port {PORT}")
     server.serve_forever()
 
+HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"),
+    "Accept-Language": "zh-CN,zh;q=0.9",
+    "Referer": "https://www.coingecko.com/"
+}
+
 cache = {
+    'crypto': [],
     'stocks': None,
     'funds': None
 }
@@ -35,21 +44,22 @@ async def fetch_crypto_data():
         'sparkline': 'false'
     }
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(headers=HEADERS) as session:
             async with session.get(url, params=params, timeout=10) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     print("Crypto数据抓取成功")
+                    cache['crypto'] = data
                     return data
                 elif resp.status == 429:
                     print("Crypto API限流，使用缓存数据")
-                    return None
+                    return cache['crypto']
                 else:
                     print(f"Crypto API异常状态码: {resp.status}")
-                    return None
+                    return cache['crypto']
     except Exception as e:
         print("抓取Crypto异常：", e)
-        return None
+        return cache['crypto']
 
 def fetch_stock_data(retry=3):
     for i in range(retry):
@@ -64,7 +74,7 @@ def fetch_stock_data(retry=3):
             print(f"A股抓取失败({i+1}/{retry})：", e)
             time.sleep(1)
     print("A股抓取失败，使用缓存数据" if cache['stocks'] else "A股无可用数据")
-    return cache['stocks']
+    return cache['stocks'] or []
 
 def fetch_fund_data():
     try:
@@ -80,24 +90,23 @@ def fetch_fund_data():
     except Exception as e:
         print("基金抓取失败:", e)
         print("使用缓存数据" if cache['funds'] else "无可用基金缓存")
-        return cache['funds']
+        return cache['funds'] or []
 
-async def main():
-    print("开始抓取行情数据...")
-    crypto = await fetch_crypto_data()
-    if crypto is None:
-        print("使用Crypto缓存或空数据")
-        crypto = []
+async def periodic_fetch(interval_sec=300):
+    while True:
+        print("开始抓取行情数据...")
+        await fetch_crypto_data()
+        fetch_stock_data()
+        fetch_fund_data()
 
-    stocks = fetch_stock_data() or []
-    funds = fetch_fund_data() or []
-
-    print(f"抓取完成，Crypto {len(crypto)}条，A股 {len(stocks)}条，基金 {len(funds)}条")
+        print(f"抓取完成，Crypto {len(cache['crypto'])}条，A股 {len(cache['stocks'])}条，基金 {len(cache['funds'])}条")
+        wait_time = interval_sec + random.randint(0, 60)  # 随机扰动，避免被封
+        print(f"{wait_time} 秒后进行下一次抓取")
+        await asyncio.sleep(wait_time)
 
 if __name__ == '__main__':
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
 
-    asyncio.run(main())
-
-    server_thread.join()
+    # 异步循环持续抓取行情数据
+    asyncio.run(periodic_fetch(interval_sec=300))
