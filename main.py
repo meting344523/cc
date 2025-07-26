@@ -1,12 +1,13 @@
 import asyncio
 import threading
 from flask import Flask, render_template_string
-import pandas as pd
 import aiohttp
-import akshare as ak
 import random
 import os
 import traceback
+import requests
+import time
+import json
 
 app = Flask(__name__)
 
@@ -21,62 +22,87 @@ HEADERS = {
 }
 
 # -------------------------------
-# 抓取与分析函数
+# 虚拟货币抓取 - Binance公开API
 # -------------------------------
 
+CRYPTO_SYMBOLS = [
+    "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT",
+    "SOLUSDT", "DOGEUSDT", "DOTUSDT", "MATICUSDT", "LTCUSDT"
+]
+
 async def fetch_crypto_data():
-    url = 'https://api.coingecko.com/api/v3/coins/markets'
-    params = {
-        'vs_currency': 'cny',  # 人民币价格
-        'order': 'market_cap_desc',
-        'per_page': 10,
-        'page': 1
-    }
+    url = "https://api.binance.com/api/v3/ticker/price"
+    result = []
     try:
         async with aiohttp.ClientSession(headers=HEADERS) as session:
-            async with session.get(url, params=params) as resp:
-                if resp.status != 200:
-                    print(f"请求CoinGecko失败，状态码: {resp.status}")
-                    return
-                data = await resp.json()
-                for d in data:
-                    print(f"【加密货币】{d['name']} 当前价格：{d['current_price']} CNY")
-                result = []
-                for d in data:
-                    current = d.get('current_price')
-                    if current is None:
+            for symbol in CRYPTO_SYMBOLS:
+                params = {"symbol": symbol}
+                async with session.get(url, params=params) as resp:
+                    if resp.status != 200:
+                        print(f"Binance请求失败: {resp.status} {symbol}")
                         continue
-                    buy = round(current * 0.95, 2)
-                    sell = round(current * 1.1, 2)
+                    data = await resp.json()
+                    price_usdt = float(data.get("price", 0))
+                    price_cny = round(price_usdt * 7, 2)  # 固定汇率7，生产环境可替换为实时汇率
+                    buy = round(price_cny * 0.95, 2)
+                    sell = round(price_cny * 1.1, 2)
                     score = round(random.uniform(6, 9), 2)
-                    reason = "市值大、走势稳健" if d.get("market_cap_rank", 9999) < 10 else "短期技术面有反弹信号"
+                    name_map = {
+                        "BTCUSDT": "Bitcoin",
+                        "ETHUSDT": "Ethereum",
+                        "BNBUSDT": "Binance Coin",
+                        "XRPUSDT": "XRP",
+                        "ADAUSDT": "Cardano",
+                        "SOLUSDT": "Solana",
+                        "DOGEUSDT": "Dogecoin",
+                        "DOTUSDT": "Polkadot",
+                        "MATICUSDT": "Polygon",
+                        "LTCUSDT": "Litecoin"
+                    }
+                    name = name_map.get(symbol, symbol)
+                    reason = "Binance交易所实时价格"
                     result.append({
-                        "名称": d["name"],
-                        "当前价格": current,
+                        "名称": name,
+                        "当前价格": price_cny,
                         "推荐买入": buy,
                         "预测卖出": sell,
                         "理由": reason,
                         "评分": score
                     })
-                cache["crypto"] = result
+        cache["crypto"] = result
+        print(f"Binance虚拟货币抓取成功，数量：{len(result)}")
     except Exception as e:
-        print("Crypto抓取失败：", e)
+        print("Binance虚拟货币抓取失败:", e)
         traceback.print_exc()
+
+# -------------------------------
+# A股抓取 - 新浪财经接口
+# -------------------------------
 
 def fetch_stock_data():
     try:
-        df = ak.stock_zh_a_spot_em()
-        df["涨跌幅"] = df["涨跌幅"].str.rstrip('%').astype(float)
-        df = df.sort_values("涨跌幅", ascending=True).head(5)  # 下跌最多5只，技术反弹机会
+        url = "http://hq.sinajs.cn/list=sh600000,sh600519,sz000001,sz000002,sh601398,sz000651,sz000333,sh600276,sh601166,sh601318"
+        resp = requests.get(url, headers=HEADERS)
+        resp.encoding = 'gbk'
+        text = resp.text
         result = []
-        for _, row in df.iterrows():
-            price = row["最新价"]
+        for line in text.splitlines():
+            parts = line.split('="')
+            if len(parts) != 2:
+                continue
+            code = parts[0].split('_')[-1]
+            data_str = parts[1].strip('";')
+            fields = data_str.split(',')
+            if len(fields) < 4:
+                continue
+            name = fields[0]
+            price = float(fields[3])  # 最新价
             buy = round(price * 0.97, 2)
             sell = round(price * 1.08, 2)
-            reason = "短期超跌，存在技术反弹可能"
+            reason = "新浪财经实时数据"
             score = round(random.uniform(6.5, 9.5), 2)
             result.append({
-                "名称": row["名称"],
+                "名称": name,
                 "当前价格": price,
                 "推荐买入": buy,
                 "预测卖出": sell,
@@ -84,33 +110,58 @@ def fetch_stock_data():
                 "评分": score
             })
         cache["stocks"] = result
-        print("A股抓取成功，推荐股票数量：", len(result))
+        print(f"新浪财经A股抓取成功，数量：{len(result)}")
     except Exception as e:
-        print("A股抓取失败：", e)
+        print("新浪财经A股抓取失败：", e)
         traceback.print_exc()
+
+# -------------------------------
+# 基金抓取 - 天天基金网接口
+# -------------------------------
 
 def fetch_fund_data():
     try:
-        df = ak.fund_em_open_fund_rank()
+        url = "http://fund.eastmoney.com/data/rankhandler.aspx"
+        params = {
+            "op": "ph",
+            "dt": "kf",
+            "ft": "all",
+            "rs": "",
+            "gs": "0",
+            "sc": "1nzf",
+            "st": "desc",
+            "sd": "",
+            "ed": "",
+            "pn": "1",
+            "pi": "50",
+            "_": str(int(time.time() * 1000))
+        }
+        headers = HEADERS.copy()
+        headers["Referer"] = "http://fund.eastmoney.com/data/fundranking.html"
+        resp = requests.get(url, params=params, headers=headers)
+        text = resp.text
+        json_str = text[text.find('['):text.rfind(']') + 1]
+        data_list = json.loads(json_str)
         result = []
-        for _, row in df.head(5).iterrows():
-            price = 1.00  # 假设净值为1.00
-            buy = round(price * 0.98, 2)
-            sell = round(price * 1.06, 2)
-            reason = "近3月业绩优秀，资金持续流入"
+        for item in data_list[:5]:
+            name = item[1]
+            net_value = float(item[2]) if item[2] != '-' else 1.0
+            buy = round(net_value * 0.98, 2)
+            sell = round(net_value * 1.06, 2)
+            reason = "天天基金最新净值"
             score = round(random.uniform(7, 10), 2)
             result.append({
-                "名称": row["基金简称"],
-                "当前价格": price,
+                "名称": name,
+                "当前价格": net_value,
                 "推荐买入": buy,
                 "预测卖出": sell,
                 "理由": reason,
                 "评分": score
             })
         cache["funds"] = result
-        print("基金抓取成功，推荐基金数量：", len(result))
+        print(f"天天基金基金抓取成功，数量：{len(result)}")
     except Exception as e:
-        print("基金抓取失败：", e)
+        print("天天基金基金抓取失败：", e)
         traceback.print_exc()
 
 # -------------------------------
@@ -196,7 +247,7 @@ def start_server():
     app.run(host="0.0.0.0", port=port)
 
 if __name__ == '__main__':
-    # 先抓一次数据，保证页面打开有数据
+    # 启动前先抓一次数据，避免空白页面
     asyncio.run(fetch_crypto_data())
     fetch_stock_data()
     fetch_fund_data()
@@ -204,5 +255,5 @@ if __name__ == '__main__':
     # 启动 Flask 服务线程
     threading.Thread(target=start_server, daemon=True).start()
 
-    # 运行异步定时抓取任务
+    # 运行异步定时抓取任务，持续更新
     asyncio.run(update_data_loop())
