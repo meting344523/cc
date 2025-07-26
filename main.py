@@ -40,87 +40,86 @@ def simple_kline_analysis(prices):
         return "趋势不明，建议观望"
 
 # -------------------------------
-# 虚拟货币抓取 - OKEx API示例，带K线形态+涨跌幅分析
+# 虚拟货币抓取 - 币安API实时价格，带K线形态+涨跌幅分析
 # -------------------------------
 
 CRYPTO_SYMBOLS = [
-    "BTC-USDT", "ETH-USDT", "BNB-USDT", "XRP-USDT", "ADA-USDT",
-    "SOL-USDT", "DOGE-USDT", "DOT-USDT", "MATIC-USDT", "LTC-USDT"
+    "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT",
+    "SOLUSDT", "DOGEUSDT", "DOTUSDT", "MATICUSDT", "LTCUSDT"
 ]
 
-# 模拟过去5日价格（你可替换成历史数据接口）
+# 模拟过去5日价格（可替换为历史数据接口）
 mock_past_prices = {
-    "BTC-USDT": [26000, 26200, 26500, 26300, 26800],
-    "ETH-USDT": [1700, 1720, 1740, 1730, 1750],
-    "BNB-USDT": [300, 305, 310, 308, 315],
-    "XRP-USDT": [0.5, 0.52, 0.51, 0.53, 0.54],
-    "ADA-USDT": [0.4, 0.41, 0.42, 0.43, 0.44],
-    "SOL-USDT": [20, 21, 22, 21.5, 22.5],
-    "DOGE-USDT": [0.06, 0.061, 0.062, 0.063, 0.064],
-    "DOT-USDT": [6, 6.1, 6.2, 6.15, 6.3],
-    "MATIC-USDT": [1, 1.02, 1.03, 1.04, 1.05],
-    "LTC-USDT": [90, 92, 91, 93, 94],
+    "BTCUSDT": [26000, 26200, 26500, 26300, 26800],
+    "ETHUSDT": [1700, 1720, 1740, 1730, 1750],
+    "BNBUSDT": [300, 305, 310, 308, 315],
+    "XRPUSDT": [0.5, 0.52, 0.51, 0.53, 0.54],
+    "ADAUSDT": [0.4, 0.41, 0.42, 0.43, 0.44],
+    "SOLUSDT": [20, 21, 22, 21.5, 22.5],
+    "DOGEUSDT": [0.06, 0.061, 0.062, 0.063, 0.064],
+    "DOTUSDT": [6, 6.1, 6.2, 6.15, 6.3],
+    "MATICUSDT": [1, 1.02, 1.03, 1.04, 1.05],
+    "LTCUSDT": [90, 92, 91, 93, 94],
 }
 
 async def fetch_crypto_data():
-    url = "https://www.okx.com/api/v5/market/tickers?instType=SPOT"
+    url = "https://api.binance.com/api/v3/ticker/price"
     result = []
     try:
         async with aiohttp.ClientSession(headers=HEADERS) as session:
             async with session.get(url) as resp:
                 if resp.status != 200:
-                    print(f"OKEx请求失败: {resp.status}")
+                    print(f"Binance请求失败: {resp.status}")
                     return
-                data = await resp.json()
-                tickers = data.get("data", [])
+                data = await resp.json()  # 返回是所有交易对列表
+                price_map = {item["symbol"]: float(item["price"]) for item in data}
                 for symbol in CRYPTO_SYMBOLS:
-                    for ticker in tickers:
-                        if ticker["instId"] == symbol:
-                            price_usdt = float(ticker["last"])
-                            price_cny = round(price_usdt * 7, 2)
-                            buy = round(price_cny * 0.95, 2)
-                            sell = round(price_cny * 1.1, 2)
-                            score = round(random.uniform(6, 9), 2)
+                    price_usdt = price_map.get(symbol)
+                    if price_usdt is None:
+                        continue
+                    price_cny = round(price_usdt * 7, 2)
+                    buy = round(price_cny * 0.95, 2)
+                    sell = round(price_cny * 1.1, 2)
+                    score = round(random.uniform(6, 9), 2)
 
-                            prices = mock_past_prices.get(symbol, [])
-                            kline_reason = simple_kline_analysis(prices)
+                    prices = mock_past_prices.get(symbol, [])
+                    kline_reason = simple_kline_analysis(prices)
 
-                            # 计算涨跌幅（今日收盘与前一日收盘）
-                            if len(prices) >= 2:
-                                change_pct = (prices[-1] - prices[-2]) / prices[-2] * 100
-                                change_text = f"日涨跌幅 {change_pct:.2f}%。"
-                            else:
-                                change_text = ""
+                    # 计算涨跌幅（今日收盘与前一日收盘）
+                    if len(prices) >= 2:
+                        change_pct = (prices[-1] - prices[-2]) / prices[-2] * 100
+                        change_text = f"日涨跌幅 {change_pct:.2f}%。"
+                    else:
+                        change_text = ""
 
-                            name_map = {
-                                "BTC-USDT": "Bitcoin",
-                                "ETH-USDT": "Ethereum",
-                                "BNB-USDT": "Binance Coin",
-                                "XRP-USDT": "XRP",
-                                "ADA-USDT": "Cardano",
-                                "SOL-USDT": "Solana",
-                                "DOGE-USDT": "Dogecoin",
-                                "DOT-USDT": "Polkadot",
-                                "MATIC-USDT": "Polygon",
-                                "LTC-USDT": "Litecoin"
-                            }
-                            name = name_map.get(symbol, symbol)
+                    name_map = {
+                        "BTCUSDT": "Bitcoin",
+                        "ETHUSDT": "Ethereum",
+                        "BNBUSDT": "Binance Coin",
+                        "XRPUSDT": "XRP",
+                        "ADAUSDT": "Cardano",
+                        "SOLUSDT": "Solana",
+                        "DOGEUSDT": "Dogecoin",
+                        "DOTUSDT": "Polkadot",
+                        "MATICUSDT": "Polygon",
+                        "LTCUSDT": "Litecoin"
+                    }
+                    name = name_map.get(symbol, symbol)
 
-                            reason = f"OKEx实时价格。{change_text}{kline_reason}。综合评分：{score}/10。"
+                    reason = f"币安实时价格。{change_text}{kline_reason}。综合评分：{score}/10。"
 
-                            result.append({
-                                "名称": name,
-                                "当前价格": price_cny,
-                                "推荐买入": buy,
-                                "预测卖出": sell,
-                                "理由": reason,
-                                "评分": score
-                            })
-                            break
+                    result.append({
+                        "名称": name,
+                        "当前价格": price_cny,
+                        "推荐买入": buy,
+                        "预测卖出": sell,
+                        "理由": reason,
+                        "评分": score
+                    })
         cache["crypto"] = sorted(result, key=lambda x: x["评分"], reverse=True)
-        print(f"OKEx虚拟货币抓取成功，数量：{len(result)}")
+        print(f"币安虚拟货币抓取成功，数量：{len(result)}")
     except Exception as e:
-        print("OKEx虚拟货币抓取失败:", e)
+        print("币安虚拟货币抓取失败:", e)
         traceback.print_exc()
 
 # -------------------------------
@@ -181,7 +180,7 @@ def fetch_stock_data():
         traceback.print_exc()
 
 # -------------------------------
-# 基金抓取 - 天天基金网 + 代码名详细展示 + 评分排序
+# 基金抓取 - 天天基金网，周末无数据时显示提示（类似A股处理）
 # -------------------------------
 
 def fetch_fund_data():
@@ -231,6 +230,8 @@ def fetch_fund_data():
                 "理由": reason,
                 "评分": score
             })
+
+        # 如果当天无数据，则显示非交易时间提示，类似A股
         if not result:
             cache["funds"] = [{
                 "名称": "提示",
