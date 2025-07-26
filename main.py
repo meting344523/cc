@@ -21,8 +21,16 @@ async def fetch_crypto_data():
     }
     r = requests.get(url, params=params)
     data = r.json()
-    df = pd.DataFrame(data)[['id', 'symbol', 'name', 'current_price', 'high_24h', 'low_24h', 'total_volume']]
-    df = df[df['current_price'] < 6]  # 约5元附近
+    # 调试用，部署后可以注释掉
+    print("Crypto data sample:", data[:3])
+    df = pd.DataFrame(data)
+    # 动态获取字段，避免KeyError
+    needed_cols = ['id', 'symbol', 'name', 'current_price', 'high_24h', 'low_24h', 'total_volume']
+    valid_cols = [col for col in needed_cols if col in df.columns]
+    df = df[valid_cols]
+    # 价格筛选，字段存在才筛选
+    if 'current_price' in df.columns:
+        df = df[df['current_price'] < 6]
     return df
 
 
@@ -65,9 +73,9 @@ def generate_trade_signals(ticker, price, reason="示例数据", score=5):
 def save_html_report(crypto, stock, fund, template_path='report.html', output_path='output.html'):
     with open(template_path, 'r', encoding='utf-8') as f:
         html = f.read()
-    crypto_js = json.dumps(crypto, ensure_ascii=False).replace('</', '<\/')
-    stock_js = json.dumps(stock, ensure_ascii=False).replace('</', '<\/')
-    fund_js = json.dumps(fund, ensure_ascii=False).replace('</', '<\/')
+    crypto_js = json.dumps(crypto, ensure_ascii=False).replace('</', r'<\/')
+    stock_js = json.dumps(stock, ensure_ascii=False).replace('</', r'<\/')
+    fund_js = json.dumps(fund, ensure_ascii=False).replace('</', r'<\/')
     html = html.replace('// 动态插入crypto-table数据', f'fillTable({crypto_js}, "crypto-table");')
     html = html.replace('// 动态插入stock-table数据', f'fillTable({stock_js}, "stock-table");')
     html = html.replace('// 动态插入fund-table数据', f'fillTable({fund_js}, "fund-table");')
