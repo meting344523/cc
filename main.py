@@ -1,320 +1,190 @@
-import asyncio
-import threading
-from flask import Flask, render_template_string
-import aiohttp
-import random
-import os
-import traceback
-import requests
 import time
 import json
+import random
+import requests
+import akshare as ak
+from flask import Flask, render_template_string
+from datetime import datetime
 
 app = Flask(__name__)
 
-cache = {
-    "crypto": [],
-    "stocks": [],
-    "funds": []
-}
+# ===== CoinGecko 缓存机制 =====
+crypto_cache = {"data": {}, "timestamp": 0}
+crypto_ids = ['bitcoin', 'ethereum', 'dogecoin', 'solana', 'shiba-inu', 'cardano', 'polkadot', 'tron', 'avalanche-2', 'chainlink']
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0"
-}
-
-# -------------------------------
-# 简单K线形态分析函数
-# -------------------------------
-def simple_kline_analysis(prices):
-    if len(prices) < 5:
-        return "无足够历史数据判断K线形态"
-    ma3 = sum(prices[-3:]) / 3
-    ma5 = sum(prices[-5:]) / 5
-    last_price = prices[-1]
-
-    if ma3 > ma5 and last_price > ma3:
-        return "多头趋势，短期看涨"
-    elif ma3 < ma5 and last_price < ma3:
-        return "空头趋势，短期看跌"
-    else:
-        return "趋势不明，建议观望"
-
-# -------------------------------
-# 虚拟货币抓取 - CoinGecko USDT价格 + K线分析
-# -------------------------------
-mock_past_prices = {
-    "BTCUSDT": [26000, 26200, 26500, 26300, 26800],
-    "ETHUSDT": [1700, 1720, 1740, 1730, 1750],
-    "BNBUSDT": [300, 305, 310, 308, 315],
-    "XRPUSDT": [0.5, 0.52, 0.51, 0.53, 0.54],
-    "ADAUSDT": [0.4, 0.41, 0.42, 0.43, 0.44],
-    "SOLUSDT": [20, 21, 22, 21.5, 22.5],
-    "DOGEUSDT": [0.06, 0.061, 0.062, 0.063, 0.064],
-    "DOTUSDT": [6, 6.1, 6.2, 6.15, 6.3],
-    "MATICUSDT": [1, 1.02, 1.03, 1.04, 1.05],
-    "LTCUSDT": [90, 92, 91, 93, 94],
-}
-
-symbol_map = {
-    "bitcoin": ("Bitcoin", "BTCUSDT"),
-    "ethereum": ("Ethereum", "ETHUSDT"),
-    "binancecoin": ("BNB", "BNBUSDT"),
-    "ripple": ("XRP", "XRPUSDT"),
-    "cardano": ("ADA", "ADAUSDT"),
-    "solana": ("Solana", "SOLUSDT"),
-    "dogecoin": ("Dogecoin", "DOGEUSDT"),
-    "polkadot": ("Polkadot", "DOTUSDT"),
-    "polygon": ("Polygon", "MATICUSDT"),
-    "litecoin": ("Litecoin", "LTCUSDT"),
-}
-
-async def fetch_crypto_data():
-    ids = ",".join(symbol_map.keys())
-    url = "https://api.coingecko.com/api/v3/simple/price"
+def get_crypto_prices(ids):
+    url = 'https://api.coingecko.com/api/v3/simple/price'
     params = {
-        "ids": ids,
-        "vs_currencies": "usdt"
+        'ids': ','.join(ids),
+        'vs_currencies': 'usdt'
     }
+    response = requests.get(url, params=params)
+    response.raise_for_status()
+    return response.json()
+
+def safe_get_crypto_prices(ids):
+    now = time.time()
+    if now - crypto_cache["timestamp"] < 60:
+        return crypto_cache["data"]
+    try:
+        data = get_crypto_prices(ids)
+        crypto_cache["data"] = data
+        crypto_cache["timestamp"] = now
+        return data
+    except Exception as e:
+        print("CoinGecko 请求失败:", e)
+        return crypto_cache["data"]
+
+# ===== A股数据 =====
+def get_cn_stocks():
+    try:
+        df = ak.stock_zh_a_spot_em()
+        df = df[df['最新价'] > 0]
+        return df[['代码', '名称', '最新价']].head(10).to_dict(orient='records')
+    except Exception as e:
+        print("A股数据请求失败:", e)
+        return []
+
+# ===== 基金数据 =====
+def get_fund_list():
+    try:
+        fund_rank = ak.fund_rank_fund_em()
+        codes = fund_rank['基金代码'].tolist()[:10]  # 前10只
+        return codes
+    except Exception as e:
+        print("基金列表获取失败:", e)
+        return []
+
+def get_fund_realtime(code):
+    try:
+        df = ak.fund_em_open_fund_info(fund_code=code)
+        name = df[df['item'] == '基金全称']['value'].values[0]
+        net_value = float(df[df['item'] == '单位净值']['value'].values[0])
+        return {'代码': code, '名称': name, '最新价': net_value}
+    except:
+        return None
+
+def get_funds():
+    codes = get_fund_list()
     result = []
-    try:
-        async with aiohttp.ClientSession(headers=HEADERS) as session:
-            async with session.get(url, params=params) as resp:
-                if resp.status != 200:
-                    print(f"CoinGecko请求失败: {resp.status}")
-                    return
-                data = await resp.json()
-                for key in symbol_map:
-                    name, binance_symbol = symbol_map[key]
-                    price = data.get(key, {}).get("usdt", None)
-                    if price is None:
-                        continue
+    for code in codes:
+        data = get_fund_realtime(code)
+        if data:
+            result.append(data)
+    return result
 
-                    buy = round(price * 0.95, 4)
-                    sell = round(price * 1.10, 4)
-                    score = round(random.uniform(6, 9), 2)
-                    prices = mock_past_prices.get(binance_symbol, [])
-                    kline_reason = simple_kline_analysis(prices)
+# ===== 分析推荐逻辑（可扩展）=====
+def analyze(data_list, type_name):
+    results = []
+    for d in data_list:
+        price = d['最新价']
+        score = 5 + random.random() * 5
+        buy = round(price * 0.95, 2)
+        sell = round(price * 1.1, 2)
+        reason = ""
 
-                    if len(prices) >= 2:
-                        change_pct = (prices[-1] - prices[-2]) / prices[-2] * 100
-                        change_text = f"日涨跌幅 {change_pct:.2f}%。"
-                    else:
-                        change_text = ""
+        if 4.5 <= price <= 6:
+            reason += "当前价格接近5元，属于低价潜力标的。"
+            score += 0.5
+        if price < 0.01:
+            reason += "当前价格极低，可能存在高波动潜力。"
+            score += 0.3
 
-                    reason = f"CoinGecko 实时价格。{change_text}{kline_reason} 综合评分：{score}/10。"
+        reason += "模拟评分，仅供参考。"
+        score = round(min(score, 10), 2)
 
-                    result.append({
-                        "名称": name,
-                        "当前价格": price,
-                        "推荐买入": buy,
-                        "预测卖出": sell,
-                        "理由": reason,
-                        "评分": score
-                    })
-        cache["crypto"] = sorted(result, key=lambda x: x["评分"], reverse=True)
-        print(f"CoinGecko 虚拟货币抓取成功，数量：{len(result)}")
-    except Exception as e:
-        print("CoinGecko 虚拟货币抓取失败:", e)
-        traceback.print_exc()
+        results.append({
+            '名称': d.get('名称', ''),
+            '代码': d.get('代码', ''),
+            '当前价': price,
+            '推荐买入': buy,
+            '预测卖出': sell,
+            '理由': reason,
+            '评分': score
+        })
+    return sorted(results, key=lambda x: -x['评分'])
 
-# -------------------------------
-# A股抓取 - 新浪财经接口
-# -------------------------------
-def fetch_stock_data():
-    try:
-        url = "http://hq.sinajs.cn/list=sh600000,sh600519,sz000001,sz000002,sh601398,sz000651,sz000333,sh600276,sh601166,sh601318"
-        resp = requests.get(url, headers=HEADERS)
-        resp.encoding = 'gbk'
-        text = resp.text
-        result = []
-        for line in text.splitlines():
-            parts = line.split('="')
-            if len(parts) != 2:
-                continue
-            data_str = parts[1].strip('";')
-            fields = data_str.split(',')
-            if len(fields) < 4:
-                continue
-            name = fields[0]
-            try:
-                price = float(fields[3])
-            except:
-                continue
-            if price <= 0:
-                continue
-            buy = round(price * 0.97, 2)
-            sell = round(price * 1.08, 2)
-            score = round(random.uniform(6.5, 9.5), 2)
-            reason = "新浪财经实时数据，结合价格波动及技术形态分析。"
-
-            result.append({
-                "名称": name,
-                "当前价格": price,
-                "推荐买入": buy,
-                "预测卖出": sell,
-                "理由": reason,
-                "评分": score
-            })
-        if not result:
-            cache["stocks"] = [{
-                "名称": "提示",
-                "当前价格": "-",
-                "推荐买入": "-",
-                "预测卖出": "-",
-                "理由": "当前非交易时间，A股无有效行情更新",
-                "评分": "-"
-            }]
-            print("当前非交易时间，A股无有效行情更新")
-        else:
-            cache["stocks"] = sorted(result, key=lambda x: x["评分"], reverse=True)
-            print(f"新浪财经A股抓取成功，数量：{len(result)}")
-    except Exception as e:
-        print("新浪财经A股抓取失败：", e)
-        traceback.print_exc()
-
-# -------------------------------
-# 基金抓取（自动从天天基金抓取前 N 名）
-# -------------------------------
-def fetch_fund_data():
-    try:
-        url = "http://fund.eastmoney.com/data/rankhandler.aspx"
-        params = {
-            "op": "ph",
-            "dt": "kf",
-            "ft": "all",
-            "rs": "",
-            "gs": "0",
-            "sc": "1nzf",
-            "st": "desc",
-            "sd": "",
-            "ed": "",
-            "pn": "1",
-            "pi": "30",
-            "_": str(int(time.time() * 1000))
-        }
-        headers = HEADERS.copy()
-        headers["Referer"] = "http://fund.eastmoney.com/data/fundranking.html"
-        resp = requests.get(url, params=params, headers=headers)
-        text = resp.text
-        json_str = text[text.find('['):text.rfind(']') + 1]
-        data_list = json.loads(json_str)
-        result = []
-        for item in data_list[:10]:
-            fund_code = item[0]
-            name = item[1]
-            try:
-                net_value = float(item[2]) if item[2] != '-' else 0.0
-            except:
-                net_value = 0.0
-            if net_value <= 0:
-                continue
-            buy = round(net_value * 0.98, 4)
-            sell = round(net_value * 1.06, 4)
-            score = round(random.uniform(7, 10), 2)
-            reason = f"天天基金最新净值，基金代码：{fund_code}。"
-            result.append({
-                "名称": f"{name}({fund_code})",
-                "当前价格": net_value,
-                "推荐买入": buy,
-                "预测卖出": sell,
-                "理由": reason,
-                "评分": score
-            })
-        if not result:
-            cache["funds"] = [{
-                "名称": "提示",
-                "当前价格": "-",
-                "推荐买入": "-",
-                "预测卖出": "-",
-                "理由": "当前非交易时间，基金无有效净值更新",
-                "评分": "-"
-            }]
-            print("当前非交易时间，基金无有效净值更新")
-        else:
-            cache["funds"] = sorted(result, key=lambda x: x["评分"], reverse=True)
-            print(f"天天基金基金抓取成功，数量：{len(result)}")
-    except Exception as e:
-        print("天天基金基金抓取失败：", e)
-        traceback.print_exc()
-
-# -------------------------------
-# 定时任务 - 每5分钟更新一次
-# -------------------------------
-async def update_data_loop():
-    while True:
-        print("开始抓取分析任务")
-        await fetch_crypto_data()
-        fetch_stock_data()
-        fetch_fund_data()
-        print("抓取分析完成，等待5分钟")
-        await asyncio.sleep(300)
-
-# -------------------------------
-# 网页模板
-# -------------------------------
-TEMPLATE = """
+# ===== 网页模板 =====
+HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="zh">
 <head>
   <meta charset="UTF-8">
-  <title>量化行情推荐</title>
+  <title>量化系统推荐报告</title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; background: #f6f8fa; }
+    body { font-family: "Microsoft YaHei", sans-serif; padding: 20px; background: #f6f6f6; }
     h2 { color: #333; }
-    table { border-collapse: collapse; width: 100%; margin-bottom: 30px; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
-    th { background-color: #eee; }
+    table { width: 100%%; border-collapse: collapse; margin-bottom: 40px; background: #fff; }
+    th, td { padding: 10px; border: 1px solid #ccc; text-align: center; }
+    th { background: #eee; }
   </style>
 </head>
 <body>
-  <h1>📈 量化行情系统分析结果</h1>
-  {% for category, items in data.items() %}
-    <h2>{{ category }}</h2>
-    {% if items %}
-      <table>
-        <tr>
-          <th>名称</th>
-          <th>当前价格</th>
-          <th>推荐买入</th>
-          <th>预测卖出</th>
-          <th>分析理由</th>
-          <th>评分/10</th>
-        </tr>
-        {% for row in items %}
-          <tr>
-            <td>{{ row['名称'] }}</td>
-            <td>{{ row['当前价格'] }}</td>
-            <td>{{ row['推荐买入'] }}</td>
-            <td>{{ row['预测卖出'] }}</td>
-            <td>{{ row['理由'] }}</td>
-            <td>{{ row['评分'] }}</td>
-          </tr>
-        {% endfor %}
-      </table>
-    {% else %}
-      <p>暂无数据</p>
-    {% endif %}
-  {% endfor %}
+  <h2>最新分析报告（{{ time }}）</h2>
+
+  <h3>📈 加密货币:</h3>
+  <table>
+    <tr><th>名称</th><th>代码</th><th>当前价</th><th>推荐买入</th><th>预测卖出</th><th>评分</th><th>理由</th></tr>
+    {% for item in crypto %}
+    <tr>
+      <td>{{ item.名称 }}</td><td>{{ item.代码 }}</td><td>{{ item.当前价 }}</td>
+      <td>{{ item.推荐买入 }}</td><td>{{ item.预测卖出 }}</td>
+      <td>{{ item.评分 }}</td><td>{{ item.理由 }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <h3>🏦 A股:</h3>
+  <table>
+    <tr><th>名称</th><th>代码</th><th>当前价</th><th>推荐买入</th><th>预测卖出</th><th>评分</th><th>理由</th></tr>
+    {% for item in stocks %}
+    <tr>
+      <td>{{ item.名称 }}</td><td>{{ item.代码 }}</td><td>{{ item.当前价 }}</td>
+      <td>{{ item.推荐买入 }}</td><td>{{ item.预测卖出 }}</td>
+      <td>{{ item.评分 }}</td><td>{{ item.理由 }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <h3>💰 基金:</h3>
+  <table>
+    <tr><th>名称</th><th>代码</th><th>当前价</th><th>推荐买入</th><th>预测卖出</th><th>评分</th><th>理由</th></tr>
+    {% for item in funds %}
+    <tr>
+      <td>{{ item.名称 }}</td><td>{{ item.代码 }}</td><td>{{ item.当前价 }}</td>
+      <td>{{ item.推荐买入 }}</td><td>{{ item.预测卖出 }}</td>
+      <td>{{ item.评分 }}</td><td>{{ item.理由 }}</td>
+    </tr>
+    {% endfor %}
+  </table>
 </body>
 </html>
 """
 
-@app.route("/")
-def home():
-    return render_template_string(TEMPLATE, data={
-        "虚拟货币推荐": cache["crypto"],
-        "A股推荐": cache["stocks"],
-        "基金推荐": cache["funds"]
-    })
+# ===== Web 展示入口 =====
+@app.route('/')
+def index():
+    crypto_data_raw = safe_get_crypto_prices(crypto_ids)
+    crypto_data = []
+    for cid in crypto_ids:
+        price = crypto_data_raw.get(cid, {}).get('usdt')
+        if price:
+            crypto_data.append({'名称': cid.title(), '代码': cid, '最新价': price})
 
-def start_server():
-    port = int(os.environ.get("PORT", 10000))
-    print(f"启动 Flask 服务，监听端口 {port}")
-    app.run(host="0.0.0.0", port=port)
+    stock_data = get_cn_stocks()
+    fund_data = get_funds()
 
+    crypto_result = analyze(crypto_data, "币")
+    stock_result = analyze(stock_data, "股")
+    fund_result = analyze(fund_data, "基")
+
+    return render_template_string(HTML_TEMPLATE,
+                                  time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                  crypto=crypto_result,
+                                  stocks=stock_result,
+                                  funds=fund_result)
+
+# ===== 启动 Flask 服务 =====
 if __name__ == '__main__':
-    # 启动前先抓一次数据，避免页面空
-    asyncio.run(fetch_crypto_data())
-    fetch_stock_data()
-    fetch_fund_data()
-    threading.Thread(target=start_server, daemon=True).start()
-    asyncio.run(update_data_loop())
+    print("启动 Flask 服务，监听端口 10000")
+    app.run(host="0.0.0.0", port=10000)
