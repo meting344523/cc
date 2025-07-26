@@ -4,9 +4,9 @@ from flask import Flask, render_template_string
 import pandas as pd
 import aiohttp
 import akshare as ak
-import time
 import random
 import os
+import traceback
 
 app = Flask(__name__)
 
@@ -27,7 +27,7 @@ HEADERS = {
 async def fetch_crypto_data():
     url = 'https://api.coingecko.com/api/v3/coins/markets'
     params = {
-        'vs_currency': 'cny',      # 这里单位是人民币
+        'vs_currency': 'cny',  # 人民币价格
         'order': 'market_cap_desc',
         'per_page': 10,
         'page': 1
@@ -35,19 +35,20 @@ async def fetch_crypto_data():
     try:
         async with aiohttp.ClientSession(headers=HEADERS) as session:
             async with session.get(url, params=params) as resp:
+                if resp.status != 200:
+                    print(f"请求CoinGecko失败，状态码: {resp.status}")
+                    return
                 data = await resp.json()
-                # 打印调试，确认价格合理
                 for d in data:
-                    print(f"【加密货币】{d['name']} 当前价格：{d['current_price']} CNY，市值排名：{d['market_cap_rank']}")
-
+                    print(f"【加密货币】{d['name']} 当前价格：{d['current_price']} CNY")
                 result = []
                 for d in data:
                     current = d.get('current_price')
                     if current is None:
-                        continue  # 无价格跳过
+                        continue
                     buy = round(current * 0.95, 2)
                     sell = round(current * 1.1, 2)
-                    score = random.uniform(6, 9)
+                    score = round(random.uniform(6, 9), 2)
                     reason = "市值大、走势稳健" if d.get("market_cap_rank", 9999) < 10 else "短期技术面有反弹信号"
                     result.append({
                         "名称": d["name"],
@@ -55,19 +56,18 @@ async def fetch_crypto_data():
                         "推荐买入": buy,
                         "预测卖出": sell,
                         "理由": reason,
-                        "评分": round(score, 2)
+                        "评分": score
                     })
                 cache["crypto"] = result
     except Exception as e:
         print("Crypto抓取失败：", e)
-
+        traceback.print_exc()
 
 def fetch_stock_data():
     try:
         df = ak.stock_zh_a_spot_em()
-        # 处理涨跌幅，字符串转float
         df["涨跌幅"] = df["涨跌幅"].str.rstrip('%').astype(float)
-        df = df.sort_values("涨跌幅", ascending=True).head(5)  # 选跌幅较大股票做反弹机会
+        df = df.sort_values("涨跌幅", ascending=True).head(5)  # 下跌最多5只，技术反弹机会
         result = []
         for _, row in df.iterrows():
             price = row["最新价"]
@@ -84,17 +84,17 @@ def fetch_stock_data():
                 "评分": score
             })
         cache["stocks"] = result
-        print("【A股】抓取完成，推荐股票数量：", len(result))
+        print("A股抓取成功，推荐股票数量：", len(result))
     except Exception as e:
         print("A股抓取失败：", e)
-
+        traceback.print_exc()
 
 def fetch_fund_data():
     try:
         df = ak.fund_em_open_fund_rank()
         result = []
         for _, row in df.head(5).iterrows():
-            price = 1.00  # 基金无实时价格，假设净值1.00
+            price = 1.00  # 假设净值为1.00
             buy = round(price * 0.98, 2)
             sell = round(price * 1.06, 2)
             reason = "近3月业绩优秀，资金持续流入"
@@ -108,9 +108,10 @@ def fetch_fund_data():
                 "评分": score
             })
         cache["funds"] = result
-        print("【基金】抓取完成，推荐基金数量：", len(result))
+        print("基金抓取成功，推荐基金数量：", len(result))
     except Exception as e:
         print("基金抓取失败：", e)
+        traceback.print_exc()
 
 # -------------------------------
 # 定时任务
@@ -123,10 +124,10 @@ async def update_data_loop():
         fetch_stock_data()
         fetch_fund_data()
         print("抓取分析完成，等待5分钟")
-        await asyncio.sleep(300)  # 5分钟更新一次
+        await asyncio.sleep(300)
 
 # -------------------------------
-# 网页展示
+# 网页展示模板
 # -------------------------------
 
 TEMPLATE = """
@@ -195,7 +196,13 @@ def start_server():
     app.run(host="0.0.0.0", port=port)
 
 if __name__ == '__main__':
+    # 先抓一次数据，保证页面打开有数据
+    asyncio.run(fetch_crypto_data())
+    fetch_stock_data()
+    fetch_fund_data()
+
     # 启动 Flask 服务线程
     threading.Thread(target=start_server, daemon=True).start()
-    # 运行异步定时更新任务
+
+    # 运行异步定时抓取任务
     asyncio.run(update_data_loop())
