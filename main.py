@@ -21,20 +21,34 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
 }
 
-# -------------------------------
-# 虚拟货币抓取 - Binance公开API
-# -------------------------------
-
 CRYPTO_SYMBOLS = [
     "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT",
     "SOLUSDT", "DOGEUSDT", "DOTUSDT", "MATICUSDT", "LTCUSDT"
 ]
 
+async def fetch_usd_cny_rate():
+    url = "https://api.exchangerate-api.com/v4/latest/USD"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    print(f"汇率API请求失败，状态码: {resp.status}")
+                    return 7.0
+                data = await resp.json()
+                rate = float(data["rates"]["CNY"])
+                print(f"获取实时美元兑人民币汇率: {rate}")
+                return rate
+    except Exception as e:
+        print("获取汇率失败，使用默认7:", e)
+        traceback.print_exc()
+        return 7.0
+
 async def fetch_crypto_data():
     url = "https://api.binance.com/api/v3/ticker/price"
     result = []
     try:
-        async with aiohttp.ClientSession(headers=HEADERS) as session:
+        rate = await fetch_usd_cny_rate()
+        async with aiohttp.ClientSession() as session:
             for symbol in CRYPTO_SYMBOLS:
                 params = {"symbol": symbol}
                 async with session.get(url, params=params) as resp:
@@ -43,7 +57,7 @@ async def fetch_crypto_data():
                         continue
                     data = await resp.json()
                     price_usdt = float(data.get("price", 0))
-                    price_cny = round(price_usdt * 7, 2)  # 固定汇率7，生产环境可替换为实时汇率
+                    price_cny = round(price_usdt * rate, 2)
                     buy = round(price_cny * 0.95, 2)
                     sell = round(price_cny * 1.1, 2)
                     score = round(random.uniform(6, 9), 2)
@@ -61,6 +75,7 @@ async def fetch_crypto_data():
                     }
                     name = name_map.get(symbol, symbol)
                     reason = "Binance交易所实时价格"
+                    print(f"{name} 当前美元价格: {price_usdt}, 实时汇率: {rate}, 换算人民币: {price_cny}")
                     result.append({
                         "名称": name,
                         "当前价格": price_cny,
@@ -74,10 +89,6 @@ async def fetch_crypto_data():
     except Exception as e:
         print("Binance虚拟货币抓取失败:", e)
         traceback.print_exc()
-
-# -------------------------------
-# A股抓取 - 新浪财经接口
-# -------------------------------
 
 def fetch_stock_data():
     try:
@@ -114,10 +125,6 @@ def fetch_stock_data():
     except Exception as e:
         print("新浪财经A股抓取失败：", e)
         traceback.print_exc()
-
-# -------------------------------
-# 基金抓取 - 天天基金网接口
-# -------------------------------
 
 def fetch_fund_data():
     try:
@@ -164,10 +171,6 @@ def fetch_fund_data():
         print("天天基金基金抓取失败：", e)
         traceback.print_exc()
 
-# -------------------------------
-# 定时任务
-# -------------------------------
-
 async def update_data_loop():
     while True:
         print("开始抓取分析任务")
@@ -176,10 +179,6 @@ async def update_data_loop():
         fetch_fund_data()
         print("抓取分析完成，等待5分钟")
         await asyncio.sleep(300)
-
-# -------------------------------
-# 网页展示模板
-# -------------------------------
 
 TEMPLATE = """
 <!DOCTYPE html>
@@ -237,23 +236,17 @@ def home():
         "基金推荐": cache["funds"]
     })
 
-# -------------------------------
-# 启动
-# -------------------------------
-
 def start_server():
     port = int(os.environ.get("PORT", 8000))
     print(f"启动 Flask 服务，监听端口 {port}")
     app.run(host="0.0.0.0", port=port)
 
 if __name__ == '__main__':
-    # 启动前先抓一次数据，避免空白页面
+    # 启动前先抓一次，避免空白页面
     asyncio.run(fetch_crypto_data())
     fetch_stock_data()
     fetch_fund_data()
 
-    # 启动 Flask 服务线程
     threading.Thread(target=start_server, daemon=True).start()
 
-    # 运行异步定时抓取任务，持续更新
     asyncio.run(update_data_loop())
