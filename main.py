@@ -11,10 +11,14 @@ PORT = int(os.environ.get('PORT', 8000))
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'text/html; charset=utf-8')
-        self.end_headers()
-        self.wfile.write("量化行情系统运行中".encode('utf-8'))
+        if self.command == 'GET':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html; charset=utf-8')
+            self.end_headers()
+            self.wfile.write("量化行情系统运行中".encode('utf-8'))
+        else:
+            # 对HEAD请求返回501 Unsupported
+            self.send_error(501, "Unsupported method ('{}')".format(self.command))
 
 def run_server():
     server = HTTPServer(('0.0.0.0', PORT), Handler)
@@ -30,8 +34,8 @@ HEADERS = {
 
 cache = {
     'crypto': [],
-    'stocks': None,
-    'funds': None
+    'stocks': [],
+    'funds': []
 }
 
 async def fetch_crypto_data():
@@ -78,7 +82,9 @@ def fetch_stock_data(retry=3):
 
 def fetch_fund_data():
     try:
-        df = ak.fund_rank()
+        # 根据你当前akshare版本调整这里接口
+        # fund_em_open_fund_rank() 是新版akshare的基金排行接口示例
+        df = ak.fund_em_open_fund_rank()
         needed_cols = ['基金代码', '基金简称', '近1月', '近3月']
         for col in needed_cols:
             if col not in df.columns:
@@ -100,7 +106,7 @@ async def periodic_fetch(interval_sec=300):
         fetch_fund_data()
 
         print(f"抓取完成，Crypto {len(cache['crypto'])}条，A股 {len(cache['stocks'])}条，基金 {len(cache['funds'])}条")
-        wait_time = interval_sec + random.randint(0, 60)  # 随机扰动，避免被封
+        wait_time = interval_sec + random.randint(0, 60)
         print(f"{wait_time} 秒后进行下一次抓取")
         await asyncio.sleep(wait_time)
 
@@ -108,5 +114,4 @@ if __name__ == '__main__':
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
 
-    # 异步循环持续抓取行情数据
     asyncio.run(periodic_fetch(interval_sec=300))
