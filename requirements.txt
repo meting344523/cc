@@ -3,3 +3,5 @@ requests
 akshare>=1.0.90
 textblob
 pandas
+aiohttp
+Jinja2
