@@ -21,76 +21,65 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
 }
 
-last_crypto_fetch_time = 0
-crypto_cache_ttl = 600  # 10分钟缓存有效
+# -------------------------------
+# 虚拟货币抓取 - OKEx公共API
+# -------------------------------
 
-# -------------------------------
-# 虚拟货币抓取 - CoinGecko 免费API，10分钟更新一次，防止429
-# -------------------------------
+CRYPTO_SYMBOLS = [
+    "BTC-USDT", "ETH-USDT", "BNB-USDT", "XRP-USDT", "ADA-USDT",
+    "SOL-USDT", "DOGE-USDT", "DOT-USDT", "MATIC-USDT", "LTC-USDT"
+]
+
 async def fetch_crypto_data():
-    global last_crypto_fetch_time
-    now = time.time()
-    if now - last_crypto_fetch_time < crypto_cache_ttl and cache["crypto"]:
-        print("使用缓存的虚拟货币数据，减少请求频率")
-        return  # 缓存有效，跳过请求
-
-    url = "https://api.coingecko.com/api/v3/simple/price"
-    ids = "bitcoin,ethereum,binancecoin,ripple,cardano,solana,dogecoin,polkadot,polygon,litecoin"
-    vs_currencies = "usd"
+    url = "https://www.okx.com/api/v5/market/tickers?instType=SPOT"
     result = []
-    name_map = {
-        "bitcoin": "Bitcoin",
-        "ethereum": "Ethereum",
-        "binancecoin": "Binance Coin",
-        "ripple": "XRP",
-        "cardano": "Cardano",
-        "solana": "Solana",
-        "dogecoin": "Dogecoin",
-        "polkadot": "Polkadot",
-        "polygon": "Polygon",
-        "litecoin": "Litecoin"
-    }
     try:
         async with aiohttp.ClientSession(headers=HEADERS) as session:
-            params = {
-                "ids": ids,
-                "vs_currencies": vs_currencies
-            }
-            async with session.get(url, params=params) as resp:
-                if resp.status == 429:
-                    print("CoinGecko请求过于频繁，返回429，使用缓存数据")
-                    return
+            async with session.get(url) as resp:
                 if resp.status != 200:
-                    print(f"CoinGecko请求失败: {resp.status}")
+                    print(f"OKEx请求失败: {resp.status}")
                     return
                 data = await resp.json()
-                for key, name in name_map.items():
-                    price_usd = data.get(key, {}).get("usd", 0)
-                    if price_usd <= 0:
-                        continue
-                    price_cny = round(price_usd * 7, 2)
-                    buy = round(price_cny * 0.95, 2)
-                    sell = round(price_cny * 1.1, 2)
-                    score = round(random.uniform(6, 9), 2)
-                    reason = "CoinGecko实时价格"
-                    result.append({
-                        "名称": name,
-                        "当前价格": price_cny,
-                        "推荐买入": buy,
-                        "预测卖出": sell,
-                        "理由": reason,
-                        "评分": score
-                    })
-        if result:
-            cache["crypto"] = sorted(result, key=lambda x: x["评分"], reverse=True)
-            last_crypto_fetch_time = now
-            print(f"CoinGecko虚拟货币抓取成功，数量：{len(result)}")
+                tickers = data.get("data", [])
+                for symbol in CRYPTO_SYMBOLS:
+                    for ticker in tickers:
+                        if ticker["instId"] == symbol:
+                            price_usdt = float(ticker["last"])
+                            price_cny = round(price_usdt * 7, 2)  # 汇率7
+                            buy = round(price_cny * 0.95, 2)
+                            sell = round(price_cny * 1.1, 2)
+                            score = round(random.uniform(6, 9), 2)
+                            name_map = {
+                                "BTC-USDT": "Bitcoin",
+                                "ETH-USDT": "Ethereum",
+                                "BNB-USDT": "Binance Coin",
+                                "XRP-USDT": "XRP",
+                                "ADA-USDT": "Cardano",
+                                "SOL-USDT": "Solana",
+                                "DOGE-USDT": "Dogecoin",
+                                "DOT-USDT": "Polkadot",
+                                "MATIC-USDT": "Polygon",
+                                "LTC-USDT": "Litecoin"
+                            }
+                            name = name_map.get(symbol, symbol)
+                            reason = "OKEx交易所实时价格"
+                            result.append({
+                                "名称": name,
+                                "当前价格": price_cny,
+                                "推荐买入": buy,
+                                "预测卖出": sell,
+                                "理由": reason,
+                                "评分": score
+                            })
+                            break
+        cache["crypto"] = sorted(result, key=lambda x: x["评分"], reverse=True)
+        print(f"OKEx虚拟货币抓取成功，数量：{len(result)}")
     except Exception as e:
-        print("CoinGecko虚拟货币抓取失败:", e)
+        print("OKEx虚拟货币抓取失败:", e)
         traceback.print_exc()
 
 # -------------------------------
-# A股抓取 - 新浪财经接口（含非交易时间提示）
+# A股抓取 - 新浪财经接口（不变）
 # -------------------------------
 
 def fetch_stock_data():
@@ -114,7 +103,7 @@ def fetch_stock_data():
             except:
                 continue
             if price <= 0:
-                continue  # 跳过无效价格
+                continue
             buy = round(price * 0.97, 2)
             sell = round(price * 1.08, 2)
             reason = "新浪财经实时数据"
@@ -145,7 +134,7 @@ def fetch_stock_data():
         traceback.print_exc()
 
 # -------------------------------
-# 基金抓取 - 天天基金网接口（含非交易时间提示）
+# 基金抓取 - 天天基金网接口（不变）
 # -------------------------------
 
 def fetch_fund_data():
@@ -179,7 +168,7 @@ def fetch_fund_data():
             except:
                 net_value = 0.0
             if net_value <= 0:
-                continue  # 跳过无效净值
+                continue
             buy = round(net_value * 0.98, 2)
             sell = round(net_value * 1.06, 2)
             reason = "天天基金最新净值"
@@ -210,7 +199,7 @@ def fetch_fund_data():
         traceback.print_exc()
 
 # -------------------------------
-# 定时任务
+# 定时任务，10分钟更新一次
 # -------------------------------
 
 async def update_data_loop():
@@ -220,10 +209,10 @@ async def update_data_loop():
         fetch_stock_data()
         fetch_fund_data()
         print("抓取分析完成，等待10分钟")
-        await asyncio.sleep(600)  # 10分钟更新一次
+        await asyncio.sleep(600)
 
 # -------------------------------
-# 网页展示模板
+# 网页展示模板（不变）
 # -------------------------------
 
 TEMPLATE = """
@@ -287,7 +276,7 @@ def home():
 # -------------------------------
 
 def start_server():
-    port = int(os.environ.get("PORT", 8000))
+    port = int(os.environ.get("PORT", 10000))
     print(f"启动 Flask 服务，监听端口 {port}")
     app.run(host="0.0.0.0", port=port)
 
