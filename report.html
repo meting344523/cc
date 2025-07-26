@@ -3,27 +3,108 @@
 <head>
   <meta charset="UTF-8">
   <title>量化系统推荐报告</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: "Microsoft YaHei", sans-serif; background: #f8f9fa; color: #333; padding: 20px; }
-    h1, h2 { text-align: center; }
-    .section { background: #fff; padding: 20px; margin: 30px auto; border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1); max-width: 1000px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    th, td { border: 1px solid #dee2e6; padding: 8px; text-align: center; }
-    th { background-color: #007bff; color: white; }
-    .score-strong { font-weight: bold; color: #d63384; }
+    body {
+      font-family: "Microsoft YaHei", sans-serif;
+      background: #f4f6f9;
+      color: #333;
+      margin: 0;
+      padding: 0 10px;
+    }
+
+    h1, h2 {
+      text-align: center;
+      color: #2c3e50;
+    }
+
+    .section {
+      background: #ffffff;
+      padding: 20px;
+      margin: 20px auto;
+      border-radius: 12px;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+      max-width: 960px;
+      transition: transform 0.3s ease;
+    }
+
+    .section:hover {
+      transform: translateY(-3px);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+      font-size: 15px;
+    }
+
+    th, td {
+      border: 1px solid #dee2e6;
+      padding: 10px 8px;
+      text-align: center;
+    }
+
+    th {
+      background-color: #0056b3;
+      color: white;
+    }
+
+    tr:hover {
+      background-color: #f1f1f1;
+    }
+
+    .score-strong {
+      font-weight: bold;
+    }
+
+    .score-strong::after {
+      content: " ★";
+      color: #e83e8c;
+    }
+
+    @media (max-width: 768px) {
+      table, thead, tbody, th, td, tr {
+        display: block;
+      }
+      th {
+        position: sticky;
+        top: 0;
+        background: #007bff;
+        color: white;
+      }
+      td {
+        border: none;
+        border-bottom: 1px solid #dee2e6;
+        text-align: right;
+        position: relative;
+        padding-left: 50%;
+      }
+      td::before {
+        position: absolute;
+        left: 15px;
+        top: 10px;
+        white-space: nowrap;
+        content: attr(data-label);
+        font-weight: bold;
+        color: #555;
+        text-align: left;
+      }
+    }
   </style>
 </head>
 <body>
-  <h1>24小时量化推荐系统</h1>
+  <h1>📊 24小时量化推荐系统</h1>
 
   <div class="section">
     <h2>📈 虚拟货币推荐</h2>
     <table id="crypto-table">
       <thead>
-        <tr><th>名称</th><th>价格 (¥)</th><th>推荐指数</th><th>理由</th><th>买入点</th><th>止盈点</th><th>止损点</th></tr>
+        <tr>
+          <th>名称</th><th>价格 (¥)</th><th>推荐指数</th><th>理由</th><th>买入点</th><th>止盈点</th><th>止损点</th>
+        </tr>
       </thead>
-      <tbody><!-- 动态插入crypto-table数据 --></tbody>
+      <tbody><!-- JS动态插入crypto数据 --></tbody>
     </table>
   </div>
 
@@ -31,9 +112,11 @@
     <h2>🏯 A股推荐</h2>
     <table id="stock-table">
       <thead>
-        <tr><th>名称</th><th>价格 (¥)</th><th>推荐指数</th><th>理由</th><th>买入点</th><th>止盈点</th><th>止损点</th></tr>
+        <tr>
+          <th>名称</th><th>价格 (¥)</th><th>推荐指数</th><th>理由</th><th>买入点</th><th>止盈点</th><th>止损点</th>
+        </tr>
       </thead>
-      <tbody><!-- 动态插入stock-table数据 --></tbody>
+      <tbody><!-- JS动态插入stock数据 --></tbody>
     </table>
   </div>
 
@@ -41,33 +124,37 @@
     <h2>💰 基金推荐</h2>
     <table id="fund-table">
       <thead>
-        <tr><th>名称</th><th>价格 (¥)</th><th>推荐指数</th><th>理由</th><th>买入点</th><th>止盈点</th><th>止损点</th></tr>
+        <tr>
+          <th>名称</th><th>价格 (¥)</th><th>推荐指数</th><th>理由</th><th>买入点</th><th>止盈点</th><th>止损点</th>
+        </tr>
       </thead>
-      <tbody><!-- 动态插入fund-table数据 --></tbody>
+      <tbody><!-- JS动态插入fund数据 --></tbody>
     </table>
   </div>
 
   <script>
     function fillTable(data, tableId) {
       const table = document.getElementById(tableId).querySelector('tbody');
-      table.innerHTML = '';  // 清空旧数据
+      table.innerHTML = '';
       data.forEach(row => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td>${row.name}</td>
-          <td>${row.price}</td>
-          <td class="score-strong">${row.score}/10</td>
-          <td>${row.reason}</td>
-          <td>${row.entry}</td>
-          <td>${row.target}</td>
-          <td>${row.stop}</td>
+          <td data-label="名称">${row.name}</td>
+          <td data-label="价格 (¥)">${row.price}</td>
+          <td data-label="推荐指数" class="score-strong">${row.score}/10</td>
+          <td data-label="理由">${row.reason}</td>
+          <td data-label="买入点">${row.entry}</td>
+          <td data-label="止盈点">${row.target}</td>
+          <td data-label="止损点">${row.stop}</td>
         `;
         table.appendChild(tr);
       });
     }
-    // 动态插入crypto-table数据
-    // 动态插入stock-table数据
-    // 动态插入fund-table数据
+
+    // 示例：你可以通过 main.py 中导出的 JS 变量调用这些函数，如：
+    // fillTable(window.cryptoData, "crypto-table");
+    // fillTable(window.stockData, "stock-table");
+    // fillTable(window.fundData, "fund-table");
   </script>
 </body>
 </html>
