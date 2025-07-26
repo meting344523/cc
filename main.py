@@ -7,24 +7,22 @@ import akshare as ak
 import aiohttp
 import random
 
-PORT = int(os.environ.get('PORT', 8000))
+PORT = int(os.environ.get('PORT', 8000))  # 兼容 Render 端口配置
 
+# HTTP Server：保持服务在线（适配 Render Web Service 模式）
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.command == 'GET':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html; charset=utf-8')
-            self.end_headers()
-            self.wfile.write("量化行情系统运行中".encode('utf-8'))
-        else:
-            # 对HEAD请求返回501 Unsupported
-            self.send_error(501, "Unsupported method ('{}')".format(self.command))
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html; charset=utf-8')
+        self.end_headers()
+        self.wfile.write("✅ 量化行情系统运行中".encode('utf-8'))
 
 def run_server():
     server = HTTPServer(('0.0.0.0', PORT), Handler)
-    print(f"Serving HTTP on port {PORT}")
+    print(f"🌐 HTTP Server 启动于端口 {PORT}")
     server.serve_forever()
 
+# 请求头伪装
 HEADERS = {
     "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                    "(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"),
@@ -32,12 +30,14 @@ HEADERS = {
     "Referer": "https://www.coingecko.com/"
 }
 
+# 缓存机制
 cache = {
     'crypto': [],
     'stocks': [],
     'funds': []
 }
 
+# ✅ 虚拟货币（CoinGecko）
 async def fetch_crypto_data():
     url = 'https://api.coingecko.com/api/v3/coins/markets'
     params = {
@@ -52,66 +52,56 @@ async def fetch_crypto_data():
             async with session.get(url, params=params, timeout=10) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    print("Crypto数据抓取成功")
+                    print("✅ 虚拟货币数据抓取成功")
                     cache['crypto'] = data
                     return data
-                elif resp.status == 429:
-                    print("Crypto API限流，使用缓存数据")
-                    return cache['crypto']
                 else:
-                    print(f"Crypto API异常状态码: {resp.status}")
+                    print(f"⚠️ 虚拟货币接口返回异常: {resp.status}")
                     return cache['crypto']
     except Exception as e:
-        print("抓取Crypto异常：", e)
+        print("❌ 虚拟货币抓取异常:", e)
         return cache['crypto']
 
-def fetch_stock_data(retry=3):
-    for i in range(retry):
-        try:
-            df = ak.stock_zh_a_spot_em()
-            df['涨跌幅'] = df['涨跌幅'].str.rstrip('%').astype(float)
-            selected = df[['名称', '最新价', '涨跌幅']].sort_values('涨跌幅', ascending=False).head(5)
-            print("A股数据抓取成功")
-            cache['stocks'] = selected.to_dict(orient='records')
-            return cache['stocks']
-        except Exception as e:
-            print(f"A股抓取失败({i+1}/{retry})：", e)
-            time.sleep(1)
-    print("A股抓取失败，使用缓存数据" if cache['stocks'] else "A股无可用数据")
-    return cache['stocks'] or []
+# ✅ A股数据（AkShare）
+def fetch_stock_data():
+    try:
+        df = ak.stock_zh_a_spot_em()
+        df['涨跌幅'] = df['涨跌幅'].str.rstrip('%').astype(float)
+        selected = df[['名称', '最新价', '涨跌幅']].sort_values('涨跌幅', ascending=False).head(5)
+        print("✅ A股数据抓取成功")
+        cache['stocks'] = selected.to_dict(orient='records')
+        return cache['stocks']
+    except Exception as e:
+        print("❌ A股抓取失败:", e)
+        return cache['stocks']
 
+# ✅ 基金数据（AkShare）
 def fetch_fund_data():
     try:
-        # 根据你当前akshare版本调整这里接口
-        # fund_em_open_fund_rank() 是新版akshare的基金排行接口示例
         df = ak.fund_em_open_fund_rank()
-        needed_cols = ['基金代码', '基金简称', '近1月', '近3月']
-        for col in needed_cols:
-            if col not in df.columns:
-                raise ValueError(f"基金数据缺少字段: {col}")
-        top_funds = df[needed_cols].head(5)
-        print("基金数据抓取成功")
-        cache['funds'] = top_funds.to_dict(orient='records')
+        needed = ['基金代码', '基金简称', '近1月', '近3月']
+        if not all(col in df.columns for col in needed):
+            raise ValueError("字段缺失")
+        top = df[needed].head(5)
+        print("✅ 基金数据抓取成功")
+        cache['funds'] = top.to_dict(orient='records')
         return cache['funds']
     except Exception as e:
-        print("基金抓取失败:", e)
-        print("使用缓存数据" if cache['funds'] else "无可用基金缓存")
-        return cache['funds'] or []
+        print("❌ 基金抓取失败:", e)
+        return cache['funds']
 
+# 主循环，每 5 分钟轮询
 async def periodic_fetch(interval_sec=300):
     while True:
-        print("开始抓取行情数据...")
+        print("\n📡 开始抓取行情数据...")
         await fetch_crypto_data()
         fetch_stock_data()
         fetch_fund_data()
-
-        print(f"抓取完成，Crypto {len(cache['crypto'])}条，A股 {len(cache['stocks'])}条，基金 {len(cache['funds'])}条")
-        wait_time = interval_sec + random.randint(0, 60)
-        print(f"{wait_time} 秒后进行下一次抓取")
-        await asyncio.sleep(wait_time)
+        print(f"📊 当前缓存：Crypto {len(cache['crypto'])} 条，A股 {len(cache['stocks'])} 条，基金 {len(cache['funds'])} 条")
+        wait = interval_sec + random.randint(0, 60)
+        print(f"⏱️ 等待 {wait} 秒后继续抓取")
+        await asyncio.sleep(wait)
 
 if __name__ == '__main__':
-    server_thread = threading.Thread(target=run_server, daemon=True)
-    server_thread.start()
-
+    threading.Thread(target=run_server, daemon=True).start()
     asyncio.run(periodic_fetch(interval_sec=300))
