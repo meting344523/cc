@@ -21,11 +21,19 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
 }
 
-# -------------------------------
-# 虚拟货币抓取 - CoinGecko免费API替代Binance
-# -------------------------------
+last_crypto_fetch_time = 0
+crypto_cache_ttl = 600  # 10分钟缓存有效
 
+# -------------------------------
+# 虚拟货币抓取 - CoinGecko 免费API，10分钟更新一次，防止429
+# -------------------------------
 async def fetch_crypto_data():
+    global last_crypto_fetch_time
+    now = time.time()
+    if now - last_crypto_fetch_time < crypto_cache_ttl and cache["crypto"]:
+        print("使用缓存的虚拟货币数据，减少请求频率")
+        return  # 缓存有效，跳过请求
+
     url = "https://api.coingecko.com/api/v3/simple/price"
     ids = "bitcoin,ethereum,binancecoin,ripple,cardano,solana,dogecoin,polkadot,polygon,litecoin"
     vs_currencies = "usd"
@@ -49,16 +57,18 @@ async def fetch_crypto_data():
                 "vs_currencies": vs_currencies
             }
             async with session.get(url, params=params) as resp:
+                if resp.status == 429:
+                    print("CoinGecko请求过于频繁，返回429，使用缓存数据")
+                    return
                 if resp.status != 200:
                     print(f"CoinGecko请求失败: {resp.status}")
-                    cache["crypto"] = []
                     return
                 data = await resp.json()
                 for key, name in name_map.items():
                     price_usd = data.get(key, {}).get("usd", 0)
                     if price_usd <= 0:
                         continue
-                    price_cny = round(price_usd * 7, 2)  # 固定汇率7
+                    price_cny = round(price_usd * 7, 2)
                     buy = round(price_cny * 0.95, 2)
                     sell = round(price_cny * 1.1, 2)
                     score = round(random.uniform(6, 9), 2)
@@ -71,8 +81,10 @@ async def fetch_crypto_data():
                         "理由": reason,
                         "评分": score
                     })
-        cache["crypto"] = sorted(result, key=lambda x: x["评分"], reverse=True)
-        print(f"CoinGecko虚拟货币抓取成功，数量：{len(result)}")
+        if result:
+            cache["crypto"] = sorted(result, key=lambda x: x["评分"], reverse=True)
+            last_crypto_fetch_time = now
+            print(f"CoinGecko虚拟货币抓取成功，数量：{len(result)}")
     except Exception as e:
         print("CoinGecko虚拟货币抓取失败:", e)
         traceback.print_exc()
@@ -207,8 +219,8 @@ async def update_data_loop():
         await fetch_crypto_data()
         fetch_stock_data()
         fetch_fund_data()
-        print("抓取分析完成，等待5分钟")
-        await asyncio.sleep(300)
+        print("抓取分析完成，等待10分钟")
+        await asyncio.sleep(600)  # 10分钟更新一次
 
 # -------------------------------
 # 网页展示模板
