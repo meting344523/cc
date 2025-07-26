@@ -6,7 +6,13 @@ from jinja2 import Environment, FileSystemLoader
 import os
 import time
 
-# 加密货币数据
+# 简单缓存，防止空数据输出
+cache = {
+    'crypto': None,
+    'stocks': None,
+    'funds': None
+}
+
 async def fetch_crypto_data():
     url = 'https://api.coingecko.com/api/v3/coins/markets'
     params = {
@@ -22,47 +28,49 @@ async def fetch_crypto_data():
                 if resp.status == 200:
                     data = await resp.json()
                     print("Crypto data sample:", data[:2])
+                    cache['crypto'] = data
                     return data
                 elif resp.status == 429:
-                    print("Crypto API请求过于频繁，返回429限流错误")
-                    return []
+                    print("Crypto API限流，使用缓存数据")
                 else:
                     print(f"Crypto API 返回状态码异常: {resp.status}")
-                    return []
     except Exception as e:
         print("抓取Crypto失败：", e)
-        return []
+    return cache['crypto']  # 失败则返回缓存或None
 
-# A股数据
 def fetch_stock_data(retry=3):
-    for i in range(retry):
+    for attempt in range(retry):
         try:
-            df = ak.stock_zh_a_spot_em()
-            selected = df[['名称', '最新价', '涨跌幅']].copy()
-            selected['涨跌幅'] = selected['涨跌幅'].str.rstrip('%').astype(float)
-            selected = selected.sort_values(by='涨跌幅', ascending=False).head(5)
-            print("Stock data sample:\n", selected)
-            return selected.to_dict(orient='records')
+            df = ak.stock_zh_a_spot()
+            df['涨跌幅'] = df['涨跌幅'].str.rstrip('%').astype(float)
+            selected = df[['名称', '最新价', '涨跌幅']].sort_values('涨跌幅', ascending=False).head(5)
+            print("A股数据样例：\n", selected)
+            cache['stocks'] = selected.to_dict(orient='records')
+            return cache['stocks']
         except Exception as e:
-            print(f"抓取A股失败({i+1}/{retry})：", e)
+            print(f"抓取A股失败({attempt+1}/{retry})：", e)
             time.sleep(1)
-    return []
+    print("A股数据抓取失败，使用缓存数据")
+    return cache['stocks']
 
-# 基金数据
 def fetch_fund_data():
     try:
-        # 你可以用今天日期或者固定日期，建议用动态获取日期，示例硬编码一个日期
-        df = ak.fund_em_open_fund_rank(date=datetime.now().strftime('%Y-%m-%d'))
-        top_funds = df[['基金代码', '基金简称', '近1月', '近3月']].head(5)
-        print("Fund data sample:\n", top_funds)
-        return top_funds.to_dict(orient='records')
+        df = ak.fund_rank()
+        columns = df.columns
+        needed_cols = ['基金代码', '基金简称', '近1月', '近3月']
+        for col in needed_cols:
+            if col not in columns:
+                raise ValueError(f"基金数据中缺少字段: {col}")
+        top_funds = df[needed_cols].head(5)
+        print("基金数据样例：\n", top_funds)
+        cache['funds'] = top_funds.to_dict(orient='records')
+        return cache['funds']
     except Exception as e:
         print("抓取基金失败：", e)
-        return []
+        print("使用缓存基金数据")
+        return cache['funds']
 
-# 渲染HTML报告
 def render_report(crypto_data, stock_data, fund_data):
-    # 使用当前文件夹绝对路径确保能找到模板
     cur_dir = os.path.dirname(os.path.abspath(__file__))
     env = Environment(loader=FileSystemLoader(cur_dir))
     try:
@@ -71,6 +79,12 @@ def render_report(crypto_data, stock_data, fund_data):
         print("加载模板失败:", e)
         return
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # 过滤空值，确保报告只显示有数据的部分
+    crypto_data = crypto_data or []
+    stock_data = stock_data or []
+    fund_data = fund_data or []
+
     html_content = template.render(
         update_time=now,
         crypto=crypto_data,
