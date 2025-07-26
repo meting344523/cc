@@ -1,160 +1,96 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8">
-  <title>量化系统推荐报告</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body {
-      font-family: "Microsoft YaHei", sans-serif;
-      background: #f4f6f9;
-      color: #333;
-      margin: 0;
-      padding: 0 10px;
-    }
-
-    h1, h2 {
-      text-align: center;
-      color: #2c3e50;
-    }
-
-    .section {
-      background: #ffffff;
-      padding: 20px;
-      margin: 20px auto;
-      border-radius: 12px;
-      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
-      max-width: 960px;
-      transition: transform 0.3s ease;
-    }
-
-    .section:hover {
-      transform: translateY(-3px);
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 15px;
-      font-size: 15px;
-    }
-
-    th, td {
-      border: 1px solid #dee2e6;
-      padding: 10px 8px;
-      text-align: center;
-    }
-
-    th {
-      background-color: #0056b3;
-      color: white;
-    }
-
-    tr:hover {
-      background-color: #f1f1f1;
-    }
-
-    .score-strong {
-      font-weight: bold;
-    }
-
-    .score-strong::after {
-      content: " ★";
-      color: #e83e8c;
-    }
-
-    @media (max-width: 768px) {
-      table, thead, tbody, th, td, tr {
-        display: block;
-      }
-      th {
-        position: sticky;
-        top: 0;
-        background: #007bff;
-        color: white;
-      }
-      td {
-        border: none;
-        border-bottom: 1px solid #dee2e6;
-        text-align: right;
-        position: relative;
-        padding-left: 50%;
-      }
-      td::before {
-        position: absolute;
-        left: 15px;
-        top: 10px;
-        white-space: nowrap;
-        content: attr(data-label);
-        font-weight: bold;
-        color: #555;
-        text-align: left;
-      }
-    }
-  </style>
+<meta charset="UTF-8" />
+<title>最新分析报告</title>
+<style>
+  body { font-family: "Microsoft YaHei", Arial, sans-serif; background: #f9f9f9; color: #333; padding: 20px; }
+  h1 { color: #2c3e50; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 30px; }
+  th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+  th { background-color: #2980b9; color: white; }
+  tr:nth-child(even){background-color: #f2f2f2;}
+  caption { font-weight: bold; font-size: 1.2em; margin-bottom: 10px; }
+</style>
 </head>
 <body>
-  <h1>📊 24小时量化推荐系统</h1>
+<h1>最新分析报告（{{ update_time }}）</h1>
 
-  <div class="section">
-    <h2>📈 虚拟货币推荐</h2>
-    <table id="crypto-table">
-      <thead>
-        <tr>
-          <th>名称</th><th>价格 (¥)</th><th>推荐指数</th><th>理由</th><th>买入点</th><th>止盈点</th><th>止损点</th>
-        </tr>
-      </thead>
-      <tbody><!-- JS动态插入crypto数据 --></tbody>
-    </table>
-  </div>
+<h2>📈 加密货币 Top 10</h2>
+{% if crypto %}
+<table>
+  <thead>
+    <tr>
+      <th>名称</th>
+      <th>当前价 (CNY)</th>
+      <th>市值排名</th>
+      <th>24小时涨跌幅%</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in crypto %}
+    <tr>
+      <td>{{ c.name }}</td>
+      <td>{{ "%.2f"|format(c.current_price) }}</td>
+      <td>{{ c.market_cap_rank }}</td>
+      <td>{{ "%.2f"|format(c.price_change_percentage_24h or 0) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>无加密货币数据</p>
+{% endif %}
 
-  <div class="section">
-    <h2>🏯 A股推荐</h2>
-    <table id="stock-table">
-      <thead>
-        <tr>
-          <th>名称</th><th>价格 (¥)</th><th>推荐指数</th><th>理由</th><th>买入点</th><th>止盈点</th><th>止损点</th>
-        </tr>
-      </thead>
-      <tbody><!-- JS动态插入stock数据 --></tbody>
-    </table>
-  </div>
+<h2>🏦 A股涨幅前5</h2>
+{% if stocks %}
+<table>
+  <thead>
+    <tr>
+      <th>名称</th>
+      <th>最新价</th>
+      <th>涨跌幅%</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in stocks %}
+    <tr>
+      <td>{{ s['名称'] }}</td>
+      <td>{{ s['最新价'] }}</td>
+      <td>{{ "%.2f"|format(s['涨跌幅']) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>无A股数据</p>
+{% endif %}
 
-  <div class="section">
-    <h2>💰 基金推荐</h2>
-    <table id="fund-table">
-      <thead>
-        <tr>
-          <th>名称</th><th>价格 (¥)</th><th>推荐指数</th><th>理由</th><th>买入点</th><th>止盈点</th><th>止损点</th>
-        </tr>
-      </thead>
-      <tbody><!-- JS动态插入fund数据 --></tbody>
-    </table>
-  </div>
+<h2>💰 基金排名前5</h2>
+{% if funds %}
+<table>
+  <thead>
+    <tr>
+      <th>基金代码</th>
+      <th>基金简称</th>
+      <th>近1月收益%</th>
+      <th>近3月收益%</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for f in funds %}
+    <tr>
+      <td>{{ f['基金代码'] }}</td>
+      <td>{{ f['基金简称'] }}</td>
+      <td>{{ f['近1月'] }}</td>
+      <td>{{ f['近3月'] }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>无基金数据</p>
+{% endif %}
 
-  <script>
-    function fillTable(data, tableId) {
-      const table = document.getElementById(tableId).querySelector('tbody');
-      table.innerHTML = '';
-      data.forEach(row => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td data-label="名称">${row.name}</td>
-          <td data-label="价格 (¥)">${row.price}</td>
-          <td data-label="推荐指数" class="score-strong">${row.score}/10</td>
-          <td data-label="理由">${row.reason}</td>
-          <td data-label="买入点">${row.entry}</td>
-          <td data-label="止盈点">${row.target}</td>
-          <td data-label="止损点">${row.stop}</td>
-        `;
-        table.appendChild(tr);
-      });
-    }
-
-    // 示例：你可以通过 main.py 中导出的 JS 变量调用这些函数，如：
-    // fillTable(window.cryptoData, "crypto-table");
-    // fillTable(window.stockData, "stock-table");
-    // fillTable(window.fundData, "fund-table");
-  </script>
 </body>
 </html>
