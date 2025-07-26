@@ -1,14 +1,44 @@
+import time
+import json
+import os
 import pandas as pd
-from ta.volatility import AverageTrueRange
-from ta.trend import MACD
-from ta.momentum import RSIIndicator
 import requests
 from bs4 import BeautifulSoup
 from textblob import TextBlob
 import akshare as ak
-import json
+
+CACHE_DIR = './cache'
+if not os.path.exists(CACHE_DIR):
+    os.makedirs(CACHE_DIR)
+
+def save_cache(name, data):
+    with open(f"{CACHE_DIR}/{name}.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+
+def load_cache(name):
+    path = f"{CACHE_DIR}/{name}.json"
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return None
+
+def request_with_retry(url, params=None, headers=None, retries=3, timeout=10):
+    for attempt in range(retries):
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=timeout)
+            if r.status_code == 429:
+                print("API访问频率限制，等待30秒后重试...")
+                time.sleep(30)
+                continue
+            r.raise_for_status()
+            return r
+        except requests.RequestException as e:
+            print(f"请求失败，重试 {attempt+1}/{retries}，错误: {e}")
+            time.sleep(5)
+    return None
 
 def fetch_crypto_data():
+    cache_name = 'crypto'
     url = "https://api.coingecko.com/api/v3/coins/markets"
     params = {
         "vs_currency": "cny",
@@ -17,77 +47,88 @@ def fetch_crypto_data():
         "page": 1,
         "sparkline": False
     }
-    r = requests.get(url, params=params, timeout=10)
-    data = r.json()
-    if isinstance(data, list):
-        print("Crypto data sample:", data[:3])
+
+    r = request_with_retry(url, params=params)
+    if r:
+        data = r.json()
+        if isinstance(data, list):
+            save_cache(cache_name, data)
+            df = pd.DataFrame(data)
+            if 'current_price' in df.columns:
+                df = df[df['current_price'] < 6]
+            return df
+        else:
+            print("CoinGecko返回异常，使用缓存数据")
     else:
-        print("Crypto API返回异常:", data)
-        return pd.DataFrame()
-    df = pd.DataFrame(data)
-    needed_cols = ['id', 'symbol', 'name', 'current_price', 'high_24h', 'low_24h', 'total_volume']
-    valid_cols = [col for col in needed_cols if col in df.columns]
-    df = df[valid_cols]
-    if 'current_price' in df.columns:
-        df = df[df['current_price'] < 6]
-    return df
+        print("请求CoinGecko失败，使用缓存数据")
+
+    cached = load_cache(cache_name)
+    if cached:
+        print("读取CoinGecko缓存数据")
+        df = pd.DataFrame(cached)
+        if 'current_price' in df.columns:
+            df = df[df['current_price'] < 6]
+        return df
+    return pd.DataFrame()
 
 def fetch_a_stock():
-    stock_list = ak.stock_zh_a_spot_em()
-    df = stock_list[stock_list['最新价'] < 6]
-    return df[['代码', '名称', '最新价', '涨跌幅', '成交量']]
+    cache_name = 'astock'
+    try:
+        df = ak.stock_zh_a_spot_em()
+        save_cache(cache_name, df.to_dict(orient='records'))
+        df = df[df['最新价'] < 6]
+        return df[['代码', '名称', '最新价', '涨跌幅', '成交量']]
+    except Exception as e:
+        print(f"请求A股数据失败，错误: {e}，尝试读取缓存")
+        cached = load_cache(cache_name)
+        if cached:
+            df = pd.DataFrame(cached)
+            return df[df['最新价'] < 6][['代码', '名称', '最新价', '涨跌幅', '成交量']]
+    return pd.DataFrame()
 
 def fetch_funds():
-    funds = ak.fund_etf_spot_em()
-    df = funds[funds['最新价'] < 6]
-    return df[['基金代码', '基金简称', '最新价', '涨跌幅']]
+    cache_name = 'funds'
+    try:
+        df = ak.fund_etf_spot_em()
+        save_cache(cache_name, df.to_dict(orient='records'))
+        df = df[df['最新价'] < 6]
+        return df[['基金代码', '基金简称', '最新价', '涨跌幅']]
+    except Exception as e:
+        print(f"请求基金数据失败，错误: {e}，尝试读取缓存")
+        cached = load_cache(cache_name)
+        if cached:
+            df = pd.DataFrame(cached)
+            return df[df['最新价'] < 6][['基金代码', '基金简称', '最新价', '涨跌幅']]
+    return pd.DataFrame()
 
 def sentiment_analysis(keyword):
     url = f"https://news.google.com/rss/search?q={keyword}"
-    r = requests.get(url, timeout=10)
-    soup = BeautifulSoup(r.content, 'xml')
-    titles = [item.text for item in soup.find_all('title')]
-    sentiments = [TextBlob(title).sentiment.polarity for title in titles]
-    return sum(sentiments) / len(sentiments) if sentiments else 0
-
-def generate_trade_signals(ticker, price, reason="示例数据", score=5):
-    entry = round(price * 0.98, 2)
-    target = round(price * 1.1, 2)
-    stop = round(price * 0.95, 2)
-    return {
-        "name": ticker,
-        "price": price,
-        "score": score,
-        "reason": reason,
-        "entry": entry,
-        "target": target,
-        "stop": stop
-    }
-
-def save_html_report(crypto, stock, fund, template_path='report.html', output_path='output.html'):
-    with open(template_path, 'r', encoding='utf-8') as f:
-        html = f.read()
-    crypto_js = json.dumps(crypto, ensure_ascii=False).replace('</', r'<\/')
-    stock_js = json.dumps(stock, ensure_ascii=False).replace('</', r'<\/')
-    fund_js = json.dumps(fund, ensure_ascii=False).replace('</', r'<\/')
-    html = html.replace('// 动态插入crypto-table数据', f'fillTable({crypto_js}, "crypto-table");')
-    html = html.replace('// 动态插入stock-table数据', f'fillTable({stock_js}, "stock-table");')
-    html = html.replace('// 动态插入fund-table数据', f'fillTable({fund_js}, "fund-table");')
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(html)
+    r = request_with_retry(url)
+    if r:
+        soup = BeautifulSoup(r.content, 'xml')
+        titles = [item.text for item in soup.find_all('title')]
+        sentiments = [TextBlob(title).sentiment.polarity for title in titles]
+        if sentiments:
+            return sum(sentiments) / len(sentiments)
+    return 0
 
 def main():
-    crypto = fetch_crypto_data()
-    stocks = fetch_a_stock()
-    funds = fetch_funds()
+    print("开始抓取虚拟货币数据...")
+    crypto_df = fetch_crypto_data()
+    time.sleep(30)  # 避免频繁请求
 
-    crypto_results = [generate_trade_signals(row['name'], row['current_price'], "MACD金叉, 成交量放大", 7) for _, row in crypto.head(5).iterrows()]
-    stock_results = [generate_trade_signals(row['名称'], row['最新价'], "RSI超卖, 放量", 6) for _, row in stocks.head(5).iterrows()]
-    fund_results = [generate_trade_signals(row['基金简称'], row['最新价'], "稳定回撤, 政策利好", 5) for _, row in funds.head(5).iterrows()]
+    print("开始抓取A股数据...")
+    stock_df = fetch_a_stock()
+    time.sleep(30)
 
-    save_html_report(crypto_results, stock_results, fund_results)
+    print("开始抓取基金数据...")
+    fund_df = fetch_funds()
 
-    print("报告生成完毕：output.html")
+    print(f"虚拟货币数量: {len(crypto_df)}")
+    print(f"A股数量: {len(stock_df)}")
+    print(f"基金数量: {len(fund_df)}")
+
+    # TODO: 根据你的分析逻辑，筛选满足条件的标的，生成交易信号和HTML报告
 
 if __name__ == '__main__':
     main()
