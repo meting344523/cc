@@ -6,6 +6,7 @@ import aiohttp
 import akshare as ak
 import time
 import random
+import os
 
 app = Flask(__name__)
 
