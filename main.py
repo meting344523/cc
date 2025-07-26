@@ -13,7 +13,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-type', 'text/html; charset=utf-8')
         self.end_headers()
-        self.wfile.write(b"量化行情系统运行中")
+        self.wfile.write("量化行情系统运行中".encode('utf-8'))
 
 def run_server():
     server = HTTPServer(('0.0.0.0', PORT), Handler)
@@ -54,7 +54,7 @@ async def fetch_crypto_data():
 def fetch_stock_data(retry=3):
     for i in range(retry):
         try:
-            df = ak.stock_zh_a_spot()
+            df = ak.stock_zh_a_spot_em()
             df['涨跌幅'] = df['涨跌幅'].str.rstrip('%').astype(float)
             selected = df[['名称', '最新价', '涨跌幅']].sort_values('涨跌幅', ascending=False).head(5)
             print("A股数据抓取成功")
@@ -92,16 +92,12 @@ async def main():
     stocks = fetch_stock_data() or []
     funds = fetch_fund_data() or []
 
-    # 这里可扩展报告生成或其他逻辑
     print(f"抓取完成，Crypto {len(crypto)}条，A股 {len(stocks)}条，基金 {len(funds)}条")
 
 if __name__ == '__main__':
-    # 启动HTTP服务线程，保持监听端口
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
 
-    # 运行抓取主程序（单次）
     asyncio.run(main())
 
-    # 主线程阻塞，保持HTTP服务持续运行
     server_thread.join()
