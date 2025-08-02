@@ -1,0 +1,46 @@
+blinker==1.9.0
+click==8.2.1
+Flask==3.1.1
+flask-cors==6.0.0
+Flask-SQLAlchemy==3.1.1
+itsdangerous==2.2.0
+Jinja2==3.1.6
+MarkupSafe==3.0.2
+SQLAlchemy==2.0.41
+typing_extensions==4.14.0
+Werkzeug==3.1.3
+
+# 数据获取和处理
+requests==2.31.0
+pandas==2.2.2
+numpy==1.26.4
+akshare>=1.17.0
+
+# 技术指标计算
+ta==0.11.0
+
+# 机器学习
+scikit-learn==1.4.2
+joblib==1.4.2
+
+# 数据缓存
+APScheduler==3.10.4
+
+# 时间处理
+pytz==2024.1
+
+# HTTP客户端
+httpx==0.27.0
+
+# 数据验证
+pydantic==2.7.1
+
+# 日志处理
+loguru==0.7.2
+
+# 环境变量管理
+python-dotenv==1.0.1
+
+# Web服务器
+gunicorn==22.0.0
+

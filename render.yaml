@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: quantitative-analysis-system
+    env: python
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: |
+      cd src && python main.py
+    plan: free
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: DEBUG
+        value: false
+      - key: PORT
+        value: 10000
+    healthCheckPath: /health
+    autoDeploy: true
+

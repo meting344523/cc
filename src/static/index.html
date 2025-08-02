@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>量化分析系统 - 实时监控</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <header class="header">
+            <div class="header-content">
+                <h1 class="title">
+                    <span class="title-icon">📊</span>
+                    量化分析系统
+                </h1>
+                <div class="status-indicator">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">系统运行中</span>
+                </div>
+            </div>
+            <div class="update-info">
+                <span>最后更新: </span>
+                <span id="lastUpdateTime">--</span>
+                <button class="refresh-btn" id="refreshBtn">
+                    <span class="refresh-icon">🔄</span>
+                    刷新数据
+                </button>
+            </div>
+        </header>
+
+        <!-- 主要内容区域 -->
+        <main class="main-content">
+            <!-- 加密货币市场 -->
+            <section class="market-section">
+                <div class="section-header">
+                    <h2 class="section-title">
+                        <span class="section-icon">₿</span>
+                        加密货币市场
+                    </h2>
+                    <div class="section-stats">
+                        <span id="cryptoCount">0</span> 个币种
+                    </div>
+                </div>
+                <div class="market-grid" id="cryptoGrid">
+                    <!-- 加密货币数据将在这里动态加载 -->
+                </div>
+            </section>
+
+            <!-- A股市场 -->
+            <section class="market-section">
+                <div class="section-header">
+                    <h2 class="section-title">
+                        <span class="section-icon">📈</span>
+                        A股市场
+                    </h2>
+                    <div class="section-stats">
+                        <span id="stockCount">0</span> 只股票
+                    </div>
+                </div>
+                <div class="market-grid" id="stockGrid">
+                    <!-- A股数据将在这里动态加载 -->
+                </div>
+            </section>
+
+            <!-- 基金市场 -->
+            <section class="market-section">
+                <div class="section-header">
+                    <h2 class="section-title">
+                        <span class="section-icon">🏦</span>
+                        基金市场
+                    </h2>
+                    <div class="section-stats">
+                        <span id="fundCount">0</span> 只基金
+                    </div>
+                </div>
+                <div class="market-grid" id="fundGrid">
+                    <!-- 基金数据将在这里动态加载 -->
+                </div>
+            </section>
+        </main>
+
+        <!-- 底部信息 -->
+        <footer class="footer">
+            <div class="footer-content">
+                <p>&copy; 2024 量化分析系统 | 24小时实时监控</p>
+                <div class="footer-stats">
+                    <span>数据源: CoinGecko, AkShare, 天天基金</span>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 资产详情模态框 -->
+    <div class="modal" id="assetModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">资产详情</h3>
+                <button class="modal-close" id="modalClose">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- 详情内容将在这里动态加载 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载提示 -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>正在加载数据...</p>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+
